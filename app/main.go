@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -66,9 +67,16 @@ func init() {
 	}
 }
 
+var conn *af.Connector
+
 func main() {
+	http.HandleFunc("/", statusHandler)
+
+	go http.ListenAndServe(":8000", nil)
+
 	fmt.Printf("Connecting to %s:%d %s//%s\n", host, int(port), user, pass)
-	conn, err := af.Open(host, user, pass, dbName, int(port))
+	var err error
+	conn, err = af.Open(host, user, pass, dbName, int(port))
 	if err != nil {
 		fmt.Println("failed to connect, err:", err)
 	}
@@ -86,4 +94,12 @@ func main() {
 	if err != nil {
 		log.Fatalln("insert error:", err)
 	}
+}
+
+func statusHandler(res http.ResponseWriter, req *http.Request) {
+	if conn == nil {
+		fmt.Fprintf(res, "live")
+	}
+
+	fmt.Fprintf(res, "ready")
 }
