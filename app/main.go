@@ -29,6 +29,7 @@ var (
 	envPort   = "TDENGINE_PORT"
 	envHost   = "TDENGINE_HOST"
 	envUser   = "TDENGINE_USER"
+	envPass   = "TDENGINE_PASS"
 	envDBName = "TDENGINE_DBNAME"
 )
 
@@ -44,18 +45,19 @@ func init() {
 
 	missingParams := []string{}
 
-	host = os.Getenv(envHost)
-	if host == "" {
+	if host = os.Getenv(envHost); host == "" {
 		missingParams = append(missingParams, envHost)
 	}
 
-	user = os.Getenv(envUser)
-	if user == "" {
+	if user = os.Getenv(envUser); user == "" {
 		missingParams = append(missingParams, envUser)
 	}
 
-	dbName = os.Getenv(envDBName)
-	if dbName == "" {
+	if pass = os.Getenv(envPass); pass == "" {
+		missingParams = append(missingParams, envPass)
+	}
+
+	if dbName = os.Getenv(envDBName); dbName == "" {
 		missingParams = append(missingParams, envDBName)
 	}
 
@@ -65,9 +67,10 @@ func init() {
 }
 
 func main() {
-	conn, err := af.Open(host, user, pass, "", int(port))
+	fmt.Printf("Connecting to %s:%d %s//%s\n", host, int(port), user, pass)
+	conn, err := af.Open(host, user, pass, dbName, int(port))
 	if err != nil {
-		fmt.Println("fail to connect, err:", err)
+		fmt.Println("failed to connect, err:", err)
 	}
 	defer conn.Close()
 
