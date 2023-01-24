@@ -2,18 +2,26 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 	"github.com/taosdata/driver-go/v3/af"
 )
 
-func prepareDatabase(conn *af.Connector) {
-	_, err := conn.Exec("CREATE DATABASE IF EXISTS test")
+func initDatabase() {
+	fmt.Printf("Connecting to %s:%d %s//%s\n", host, int(port), user, pass)
+	conn, err := af.Open(host, user, pass, "", int(port))
+	if err != nil {
+		fmt.Println("failed to init connect, err:", err)
+	}
+	defer conn.Close()
+
+	_, err = conn.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s;"))
 	if err != nil {
 		panic(err)
 	}
@@ -23,15 +31,16 @@ func prepareDatabase(conn *af.Connector) {
 	}
 }
 
-var host, user, pass, dbName string
+var host, user, pass, dbName, serverPort string
 var port int64 = 6030
 
-var (
-	envPort   = "TDENGINE_PORT"
-	envHost   = "TDENGINE_HOST"
-	envUser   = "TDENGINE_USER"
-	envPass   = "TDENGINE_PASS"
-	envDBName = "TDENGINE_DBNAME"
+const (
+	envPort       = "TDENGINE_PORT"
+	envHost       = "TDENGINE_HOST"
+	envUser       = "TDENGINE_USER"
+	envPass       = "TDENGINE_PASS"
+	envDBName     = "TDENGINE_DBNAME"
+	envServerPort = "SERVER_PORT"
 )
 
 func init() {
@@ -62,44 +71,49 @@ func init() {
 		missingParams = append(missingParams, envDBName)
 	}
 
+	if serverPort = os.Getenv(envServerPort); serverPort == "" {
+		missingParams = append(missingParams, envServerPort)
+	}
+
 	if len(missingParams) > 0 {
 		panic(fmt.Sprintf("missing required env variables: %s", strings.Join(missingParams, ", ")))
 	}
 }
 
-var conn *af.Connector
+var connLive bool
 
 func main() {
-	http.HandleFunc("/", statusHandler)
+	r := gin.Default()
 
-	go http.ListenAndServe(":8000", nil)
+	r.GET("/status", k8sProbeHandler)
 
-	fmt.Printf("Connecting to %s:%d %s//%s\n", host, int(port), user, pass)
-	var err error
-	conn, err = af.Open(host, user, pass, dbName, int(port))
-	if err != nil {
-		fmt.Println("failed to connect, err:", err)
-	}
-	defer conn.Close()
+	go r.Run(fmt.Sprintf(":%s", serverPort))
 
-	prepareDatabase(conn)
-	var lines = []string{
-		"meters,location=California.LosAngeles,groupid=2 current=11.8,voltage=221,phase=0.28 1648432611249",
-		"meters,location=California.LosAngeles,groupid=2 current=13.4,voltage=223,phase=0.29 1648432611250",
-		"meters,location=California.LosAngeles,groupid=3 current=10.8,voltage=223,phase=0.29 1648432611249",
-		"meters,location=California.LosAngeles,groupid=3 current=11.3,voltage=221,phase=0.35 1648432611250",
-	}
+	initDatabase()
 
-	err = conn.InfluxDBInsertLines(lines, "ms")
-	if err != nil {
-		log.Fatalln("insert error:", err)
-	}
+	connLive = true
+	// var lines = []string{
+	// 	"meters,location=California.LosAngeles,groupid=2 current=11.8,voltage=221,phase=0.28 1648432611249",
+	// 	"meters,location=California.LosAngeles,groupid=2 current=13.4,voltage=223,phase=0.29 1648432611250",
+	// 	"meters,location=California.LosAngeles,groupid=3 current=10.8,voltage=223,phase=0.29 1648432611249",
+	// 	"meters,location=California.LosAngeles,groupid=3 current=11.3,voltage=221,phase=0.35 1648432611250",
+	// }
+
+	// err = conn.InfluxDBInsertLines(lines, "ms")
+	// if err != nil {
+	// 	log.Fatalln("insert error:", err)
+	// }
+
+	time.Sleep(30 * time.Minute)
 }
 
-func statusHandler(res http.ResponseWriter, req *http.Request) {
-	if conn == nil {
-		fmt.Fprintf(res, "live")
+func k8sProbeHandler(ctx *gin.Context) {
+	const liveQuery = "live"
+
+	if connLive {
+		ctx.String(http.StatusAccepted, "")
+		return
 	}
 
-	fmt.Fprintf(res, "ready")
+	ctx.String(http.StatusNotFound, "")
 }
