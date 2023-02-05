@@ -4,36 +4,42 @@ WORKDIR /taosclient
 
 RUN apt update && apt install
 
-RUN apt install -y cmake build-essential libjansson-dev libsnappy-dev liblzma-dev libz-dev zlib1g pkg-config wget
+RUN apt install -y cmake build-essential libjansson-dev libsnappy-dev liblzma-dev libz-dev zlib1g pkg-config wget iputils-ping
 
-RUN wget https://www.taosdata.com/assets-download/3.0/TDengine-client-3.0.2.4-Linux-x64.tar.gz
+RUN wget https://github.com/taosdata/TDengine/archive/refs/tags/ver-3.0.2.4.tar.gz
 
-RUN tar -xf TDengine-client-3.0.2.4-Linux-x64.tar.gz
+RUN tar -xf ver-3.0.2.4.tar.gz
 
-WORKDIR /taosclient/TDengine-client-3.0.2.4
+WORKDIR /taosclient/TDengine-ver-3.0.2.4
 
-RUN ./install_client.sh
+RUN ./build.sh
+
+WORKDIR /taosclient/TDengine-ver-3.0.2.4/debug
+
+RUN make install
 
 WORKDIR /app
 
 COPY app /app
 
-RUN go build -o tdengine-client 
+CMD go run cmd/main.go
 
-FROM ubuntu:latest AS runner
+# RUN go build -o tdengine-client ./cmd  && chmod +x tdengine-client
 
-RUN apt update && apt install
+# FROM ubuntu:latest AS runner
 
-RUN apt install -y cmake build-essential libjansson-dev libsnappy-dev liblzma-dev libz-dev zlib1g pkg-config wget
+# RUN apt update && apt install
 
-COPY --from=builder /taosclient/TDengine-client-3.0.2.4 /taosclient/TDengine-client-3.0.2.4
+# RUN apt install -y cmake build-essential libjansson-dev libsnappy-dev liblzma-dev libz-dev zlib1g pkg-config wget
 
-WORKDIR /taosclient/TDengine-client-3.0.2.4
+# COPY --from=builder /taosclient/TDengine-ver-3.0.2.4 /taosclient/TDengine-ver-3.0.2.4
 
-RUN ./install_client.sh
+# WORKDIR /taosclient/TDengine-ver-3.0.2.4/debug
 
-WORKDIR /app
+# RUN make install
 
-COPY --from=builder /app/tdengine-client .
+# WORKDIR /app
 
-CMD ./tdengine-client
+# COPY --from=builder /app/tdengine-client .
+
+# CMD ./tdengine-client
