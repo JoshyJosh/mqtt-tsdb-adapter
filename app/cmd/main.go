@@ -8,20 +8,30 @@ import (
 	"strconv"
 	"strings"
 	"taos-adapter/db"
+	"taos-adapter/models"
+	"taos-adapter/mqtt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 var serverPort string
 
 const (
-	envServerPort = "SERVER_PORT"
-	envPort       = "TDENGINE_PORT"
-	envHost       = "TDENGINE_HOST"
-	envUser       = "TDENGINE_USER"
-	envPass       = "TDENGINE_PASS"
-	envDBName     = "TDENGINE_DBNAME"
+	envServerPort   = "SERVER_PORT"
+	envTDDBPort     = "TDENGINE_PORT"
+	envTDDBHost     = "TDENGINE_HOST"
+	envTDDBUser     = "TDENGINE_USER"
+	envTDDBPass     = "TDENGINE_PASS"
+	envTDDBName     = "TDENGINE_DBNAME"
+	envMQTTPort     = "MQTT_PORT"
+	envMQTTHost     = "MQTT_HOST"
+	envMQTTSubTopic = "MQTT_SUB_TOPIC"
+	envMQTTSubQos   = "MQTT_SUB_QOS"
+	envMQTTClientID = "MQTT_CLIENT_ID"
+	envMQTTUser     = "MQTT_USER"
+	envMQTTPass     = "MQTT_PASS"
 )
 
 // @todo consider initializing all env stuff here to get clear error messages down the line.
@@ -31,37 +41,88 @@ func init() {
 		missingParams = append(missingParams, envServerPort)
 	}
 
-	dbPortStr := os.Getenv(envPort)
-	var dbPort int64 = 6030
-	if dbPortStr != "" {
+	// check TDEngine env vars
+
+	tddbPortStr := os.Getenv(envTDDBPort)
+	var tddbPort int64 = 6030
+	if tddbPortStr != "" {
 		var err error
-		dbPort, err = strconv.ParseInt(dbPortStr, 10, 64)
+		tddbPort, err = strconv.ParseInt(tddbPortStr, 10, 64)
 
 		if err != nil {
-			panic(errors.Wrapf(err, "failed to read %s variable", envPort))
+			panic(errors.Wrapf(err, "failed to read %s variable", envTDDBPort))
 		}
 	}
 
-	host := os.Getenv(envHost)
-	if host == "" {
-		missingParams = append(missingParams, envHost)
+	tddbHost := os.Getenv(envTDDBHost)
+	if tddbHost == "" {
+		missingParams = append(missingParams, envTDDBHost)
 	}
 
-	user := os.Getenv(envUser)
-	if user == "" {
-		missingParams = append(missingParams, envUser)
+	tddbUser := os.Getenv(envTDDBUser)
+	if tddbUser == "" {
+		missingParams = append(missingParams, envTDDBUser)
 	}
 
-	pass := os.Getenv(envPass)
-	if pass == "" {
-		missingParams = append(missingParams, envPass)
+	tddbPass := os.Getenv(envTDDBPass)
+	if tddbPass == "" {
+		missingParams = append(missingParams, envTDDBPass)
+	}
+
+	tddbName := os.Getenv(envTDDBName)
+	if tddbName == "" {
+		missingParams = append(missingParams, envTDDBName)
+	}
+
+	// check MQTT env vars
+	mqttPortStr := os.Getenv(envMQTTPort)
+	var mqttPort int64 = 1883
+	if mqttPortStr != "" {
+		var err error
+		mqttPort, err = strconv.ParseInt(mqttPortStr, 10, 64)
+
+		if err != nil {
+			panic(errors.Wrapf(err, "failed to read %s variable", envMQTTPort))
+		}
+	}
+
+	mqttHost := os.Getenv(envMQTTHost)
+	if mqttHost == "" {
+		missingParams = append(missingParams, envMQTTHost)
+	}
+
+	mqttUser := os.Getenv(envMQTTUser)
+	if mqttUser == "" {
+		missingParams = append(missingParams, envMQTTUser)
+	}
+
+	mqttPass := os.Getenv(envMQTTPass)
+	if mqttPass == "" {
+		missingParams = append(missingParams, envMQTTPass)
+	}
+
+	mqttClientID := os.Getenv(envMQTTClientID)
+	if mqttClientID == "" {
+		missingParams = append(missingParams, envMQTTClientID)
+	}
+
+	mqttSubTopic := os.Getenv(envMQTTSubTopic)
+	if mqttSubTopic == "" {
+		missingParams = append(missingParams, envMQTTSubTopic)
+	}
+
+	mqttSubQos := os.Getenv(envMQTTSubQos)
+	if mqttSubQos == "" {
+		missingParams = append(missingParams, envMQTTSubQos)
 	}
 
 	if len(missingParams) > 0 {
 		panic(fmt.Sprintf("missing required env variables: %s", strings.Join(missingParams, ", ")))
 	}
 
-	db.SetDBVars(host, int(dbPort), user, pass)
+	db.SetDBVars(int(tddbPort), tddbHost, tddbUser, tddbPass, tddbName)
+
+	mqtt.SetMQTTVars(int(mqttPort), mqttHost, mqttUser, mqttPass, mqttClientID, mqttSubTopic, mqttSubQos)
 }
 
 var connLive bool
@@ -70,7 +131,12 @@ func main() {
 	r := gin.Default()
 	ctx := context.Background()
 
+	log := logrus.New()
+
+	tbMetrics := make(chan models.TimeBasedMetrics, 10)
+
 	db.InitDatabase(ctx)
+	mqtt.Sub(ctx, log, tbMetrics)
 
 	r.GET("/status", k8sProbeHandler)
 

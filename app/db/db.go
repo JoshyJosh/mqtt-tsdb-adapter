@@ -15,52 +15,12 @@ var databaseList map[string]struct{}
 var host, user, pass, dbName, serverPort string
 var port int = 6030
 
-const (
-	envPort   = "TDENGINE_PORT"
-	envHost   = "TDENGINE_HOST"
-	envUser   = "TDENGINE_USER"
-	envPass   = "TDENGINE_PASS"
-	envDBName = "TDENGINE_DBNAME"
-)
-
-// func init() {
-// 	portStr := os.Getenv(envPort)
-
-// 	if portStr != "" {
-// 		var err error
-// 		port, err = strconv.ParseInt(portStr, 10, 64)
-
-// 		if err != nil {
-// 			panic(errors.Wrapf(err, "failed to read %s variable", envPort))
-// 		}
-// 	}
-
-// 	missingParams := []string{}
-
-// 	host := os.Getenv(envHost);
-// 	if host == "" {
-// 		missingParams = append(missingParams, envHost)
-// 	}
-
-// 	user := os.Getenv(envUser);
-// 	if user == "" {
-// 		missingParams = append(missingParams, envUser)
-// 	}
-
-// 	pass := os.Getenv(envPass); if  pass == "" {
-// 		missingParams = append(missingParams, envPass)
-// 	}
-
-// 	if len(missingParams) > 0 {
-// 		panic(fmt.Sprintf("missing required env variables: %s", strings.Join(missingParams, ", ")))
-// 	}
-// }
-
-func SetDBVars(hostVar string, portVar int, userVar string, passVar string) {
+func SetDBVars(portVar int, hostVar, userVar, passVar, dbNameVar string) {
 	port = portVar
 	host = hostVar
 	user = userVar
 	pass = passVar
+	dbName = dbNameVar
 }
 
 /* PingDatabase is used to check if the database is reachable for connections and get current table list */
@@ -123,4 +83,8 @@ func getConn(dbName string) (*af.Connector, error) {
 	}
 
 	return conn, nil
+}
+
+func InsertData(insertData map[string]any) error {
+
 }
