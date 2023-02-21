@@ -29,12 +29,13 @@ func SetMQTTVars(portVar int, hostVar, userVar, passVar, clientIDVar, subTopicVa
 	subQos = subQosVar
 }
 
-func Sub(ctx context.Context, log *logrus.Logger, tbMetrics chan models.TimeBasedMetrics) {
+func ConnectAndSub(ctx context.Context, log *logrus.Logger) (chan *paho.Publish, error) {
 	server := fmt.Sprintf("%s:%d", host, port)
 
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		log.Fatalf("Failed to connect to %s: %s", server, err)
+		return nil, err
 	}
 
 	msgChan := make(chan *paho.Publish)
@@ -66,10 +67,16 @@ func Sub(ctx context.Context, log *logrus.Logger, tbMetrics chan models.TimeBase
 	ca, err := c.Connect(ctx, cp)
 	if err != nil {
 		log.Fatalln(err)
+		return nil, err
 	}
+	defer func() {
+		err = c.Disconnect(&paho.Disconnect{})
+		log.Error(errors.Wrap(err, "failed to disconnect from mqtt"))
+	}()
 
 	if ca.ReasonCode != 0 {
 		log.Fatalf("Failed to connect to %s : %d - %s", server, ca.ReasonCode, ca.Properties.ReasonString)
+		return nil, err
 	}
 
 	log.Infof("Connected to %s\n", server)
@@ -82,55 +89,77 @@ func Sub(ctx context.Context, log *logrus.Logger, tbMetrics chan models.TimeBase
 
 	if err != nil {
 		log.Fatalln(err)
+		return nil, err
 	}
 
 	if sa.Reasons[0] != []byte(subQos)[0] {
 		log.Fatalf("Failed to subscribe to %s : %d", subTopic, sa.Reasons[0])
+		return nil, err
 	}
+
 	log.Infof("Subscribed to %s", subTopic)
 
-	for m := range msgChan {
-		log.Info(m.Topic)
+	return msgChan, nil
+}
 
-		topicSlice := strings.Split(m.Topic, "/")
-		dbName := strings.Join(topicSlice[1:], ".")
+func Sub(ctx context.Context, log *logrus.Logger, msgChan chan *paho.Publish, tbMetrics chan models.TimeBasedMetrics) error {
 
-		log.Println("Received message: ", string(m.Payload))
-		log.Printf("%#v\n", m.Properties.User)
-		var timestamp time.Time
-		for _, prop := range m.Properties.User {
-			if prop.Key == "timestamp" {
-				timestamp, err = time.Parse(time.RFC3339, prop.Value)
-				if err != nil {
-					log.Fatal(err)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case m := <-msgChan:
+
+			log.Info(m.Topic)
+
+			topicSlice := strings.Split(m.Topic, "/")
+			dbName := topicSlice[1]
+			table := topicSlice[2]
+
+			log.Info("Received message: ", string(m.Payload))
+			log.Infof("%#v\n", m.Properties.User)
+
+			var timestamp time.Time
+			var err error
+
+			for _, prop := range m.Properties.User {
+				if prop.Key == "timestamp" {
+					timestamp, err = time.Parse(time.RFC3339, prop.Value)
+					if err != nil {
+						log.Error(err)
+						continue
+					}
 				}
 			}
-		}
 
-		var metrics map[string]float64
-		var tags map[string]string
-		if bytes.Contains(m.Payload, []byte("{")) {
-			metrics, tags, err = parseJSON(m.Payload)
-			if err != nil {
-				log.Fatal(err)
+			var metrics map[string]float64
+			var tags map[string]string
+			if bytes.Contains(m.Payload, []byte("{")) {
+				metrics, tags, err = parseJSON(m.Payload)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+			} else {
+				metrics, tags = parseCSV(m.Payload)
 			}
-		} else {
-			metrics, tags = parseCSV(m.Payload)
+
+			tbMetrics <- models.TimeBasedMetrics{
+				Metrics:   metrics,
+				Tags:      tags,
+				Timestamp: timestamp,
+				DB:        dbName,
+				Table:     table, // @todo determine way to set table and db name
+			}
+
+			// tdenginePayload := fmt.Sprintf("%s,%s %d", dbName, payloadMetrics, timestamp)
+
+			log.Info("Timestamp: ", timestamp)
+			log.Info("dbName: ", dbName)
 		}
-
-		tbMetrics <- models.TimeBasedMetrics{
-			Metrics:   metrics,
-			Tags:      tags,
-			Timestamp: timestamp,
-			DB:        dbName,
-			Table:     "switchthis", // @todo determine way to set table and db name
-		}
-
-		// tdenginePayload := fmt.Sprintf("%s,%s %d", dbName, payloadMetrics, timestamp)
-
-		log.Info("Timestamp: ", timestamp)
-		log.Info("dbName: ", dbName)
 	}
+
+	return nil
 }
 
 func parseCSV(body []byte) (map[string]float64, map[string]string) {

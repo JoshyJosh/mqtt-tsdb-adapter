@@ -5,13 +5,15 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"strings"
+	"taos-adapter/models"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/taosdata/driver-go/v3/af"
 )
 
-var databaseList map[string]struct{}
+var databaseMap map[string]struct{}
 var host, user, pass, dbName, serverPort string
 var port int = 6030
 
@@ -40,18 +42,32 @@ func InitDatabase(ctx context.Context) {
 	defer rows.Close()
 
 	databases := make([]driver.Value, len(rows.Columns()))
+	databaseMap := map[string]struct{}{}
+	i := 0
+
 	for {
-		err := rows.Next(databases)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				logrus.Infof("retrieved database list:\n %v", databases)
-				break
-			} else {
-				logrus.Error(errors.Wrap(err, "failed to read databases"))
-				panic(err)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			defer func() {
+				i++
+			}()
+			err := rows.Next(databases)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					logrus.Infof("retrieved database list:\n %v", databases)
+					break
+				} else {
+					logrus.Error(errors.Wrap(err, "failed to read databases"))
+					panic(err)
+				}
 			}
+
+			databaseMap[databases[i].(string)] = struct{}{}
 		}
 	}
+
 }
 
 func CreateDatabase(ctx context.Context, dbName string) error {
@@ -85,6 +101,48 @@ func getConn(dbName string) (*af.Connector, error) {
 	return conn, nil
 }
 
-func InsertData(insertData map[string]any) error {
+func InsertDatad(ctx context.Context, tbMetrics chan models.TimeBasedMetrics) error {
+	for tbMetric := range tbMetrics {
+		conn, err := getConn("")
+		if err != nil {
+			logrus.Error(err)
+			errMsg := fmt.Sprintf("failed to initial connect to database")
+			logrus.Error(errMsg)
+			return err
+		}
+		defer conn.Close()
 
+		if _, ok := databaseMap[tbMetric.DB]; !ok {
+			if _, err := conn.Execf("CREATE DATABASE IF NOT EXISTS %s;", dbName); err != nil {
+				errMsg := fmt.Sprintf("failed to create database %s", dbName)
+				logrus.Error(errMsg)
+				return errors.Wrapf(err, errMsg)
+			}
+
+			databaseMap[tbMetric.DB] = struct{}{}
+		}
+
+		if _, err := conn.Execf("USE %s", tbMetric.DB); err != nil {
+			logrus.Error(err)
+			continue
+		}
+
+		var tagStr []string
+		for key, val := range tbMetric.Tags {
+			tagStr = append(tagStr, fmt.Sprintf("%s=%g", key, val))
+		}
+
+		var metricStr []string
+		for key, val := range tbMetric.Metrics {
+			tagStr = append(metricStr, fmt.Sprintf("%s=%s", key, val))
+		}
+
+		tdenginePayload := fmt.Sprintf("%s,%s %s %d", tbMetric.Table, strings.Join(tagStr, ","), strings.Join(metricStr, ","), tbMetric.Timestamp.Unix())
+
+		if err := conn.InfluxDBInsertLines(tdenginePayload); err != nil {
+			logrus.Error(err)
+		}
+	}
+
+	return nil
 }

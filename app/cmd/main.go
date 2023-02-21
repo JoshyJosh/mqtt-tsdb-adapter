@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"taos-adapter/db"
 	"taos-adapter/models"
 	"taos-adapter/mqtt"
@@ -129,18 +130,39 @@ var connLive bool
 
 func main() {
 	r := gin.Default()
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	log := logrus.New()
 
 	tbMetrics := make(chan models.TimeBasedMetrics, 10)
 
 	db.InitDatabase(ctx)
-	mqtt.Sub(ctx, log, tbMetrics)
+
+	msgChan, err := mqtt.ConnectAndSub(ctx, log)
+	if err != nil {
+		panic(err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		mqtt.Sub(ctx, log, msgChan, tbMetrics)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := db.InsertDatad(ctx, tbMetrics); err != nil {
+			cancel()
+		}
+	}()
 
 	r.GET("/status", k8sProbeHandler)
-
 	r.Run(fmt.Sprintf(":%s", serverPort))
+
+	wg.Wait()
 }
 
 func k8sProbeHandler(ctx *gin.Context) {
