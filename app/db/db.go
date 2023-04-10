@@ -45,6 +45,7 @@ func InitDatabase(ctx context.Context) {
 	databaseMap := map[string]struct{}{}
 	i := 0
 
+dbLoop:
 	for {
 		select {
 		case <-ctx.Done():
@@ -53,11 +54,11 @@ func InitDatabase(ctx context.Context) {
 			defer func() {
 				i++
 			}()
-			err := rows.Next(databases)
-			if err != nil {
+
+			if err := rows.Next(databases); err != nil {
 				if errors.Is(err, io.EOF) {
 					logrus.Infof("retrieved database list:\n %v", databases)
-					break
+					break dbLoop
 				} else {
 					logrus.Error(errors.Wrap(err, "failed to read databases"))
 					panic(err)
@@ -113,7 +114,7 @@ func InsertDatad(ctx context.Context, tbMetrics chan models.TimeBasedMetrics) er
 		defer conn.Close()
 
 		if _, ok := databaseMap[tbMetric.DB]; !ok {
-			if _, err := conn.Execf("CREATE DATABASE IF NOT EXISTS %s;", dbName); err != nil {
+			if _, err := conn.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s;", dbName)); err != nil {
 				errMsg := fmt.Sprintf("failed to create database %s", dbName)
 				logrus.Error(errMsg)
 				return errors.Wrapf(err, errMsg)
@@ -139,7 +140,7 @@ func InsertDatad(ctx context.Context, tbMetrics chan models.TimeBasedMetrics) er
 
 		tdenginePayload := fmt.Sprintf("%s,%s %s %d", tbMetric.Table, strings.Join(tagStr, ","), strings.Join(metricStr, ","), tbMetric.Timestamp.Unix())
 
-		if err := conn.InfluxDBInsertLines(tdenginePayload); err != nil {
+		if err := conn.InfluxDBInsertLines([]string{tdenginePayload}, "ms"); err != nil {
 			logrus.Error(err)
 		}
 	}

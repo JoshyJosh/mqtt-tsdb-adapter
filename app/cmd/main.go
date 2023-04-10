@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"taos-adapter/mqtt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -37,6 +39,13 @@ const (
 
 // @todo consider initializing all env stuff here to get clear error messages down the line.
 func init() {
+	envFileFlag := flag.String("env_file", "", "env file to read")
+	if envFileFlag != nil && *envFileFlag != "" {
+		if err := godotenv.Load(*envFileFlag); err != nil {
+			panic(errors.Wrapf(err, "failed to read env file: %s", envFileFlag))
+		}
+	}
+
 	missingParams := []string{}
 	if serverPort = os.Getenv(envServerPort); serverPort == "" {
 		missingParams = append(missingParams, envServerPort)
@@ -129,6 +138,7 @@ func init() {
 var connLive bool
 
 func main() {
+	// @todo add signals
 	r := gin.Default()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
