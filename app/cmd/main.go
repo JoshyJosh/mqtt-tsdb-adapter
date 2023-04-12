@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"taos-adapter/db"
 	"taos-adapter/models"
 	"taos-adapter/mqtt"
 
@@ -39,7 +38,9 @@ const (
 
 // @todo consider initializing all env stuff here to get clear error messages down the line.
 func init() {
-	envFileFlag := flag.String("env_file", "", "env file to read")
+	envFileFlag := flag.String("env-file", "", "env file to read")
+	flag.Parse()
+
 	if envFileFlag != nil && *envFileFlag != "" {
 		if err := godotenv.Load(*envFileFlag); err != nil {
 			panic(errors.Wrapf(err, "failed to read env file: %s", envFileFlag))
@@ -63,6 +64,8 @@ func init() {
 			panic(errors.Wrapf(err, "failed to read %s variable", envTDDBPort))
 		}
 	}
+
+	fmt.Println(tddbPort)
 
 	tddbHost := os.Getenv(envTDDBHost)
 	if tddbHost == "" {
@@ -121,18 +124,25 @@ func init() {
 		missingParams = append(missingParams, envMQTTSubTopic)
 	}
 
-	mqttSubQos := os.Getenv(envMQTTSubQos)
-	if mqttSubQos == "" {
+	var mqttSubQos int64 = 1
+	mqttSubQosStr := os.Getenv(envMQTTSubQos)
+	if mqttSubQosStr == "" {
 		missingParams = append(missingParams, envMQTTSubQos)
+	} else {
+		var err error
+		mqttSubQos, err = strconv.ParseInt(mqttSubQosStr, 10, 64)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	if len(missingParams) > 0 {
 		panic(fmt.Sprintf("missing required env variables: %s", strings.Join(missingParams, ", ")))
 	}
 
-	db.SetDBVars(int(tddbPort), tddbHost, tddbUser, tddbPass, tddbName)
+	// db.SetDBVars(int(tddbPort), tddbHost, tddbUser, tddbPass, tddbName)
 
-	mqtt.SetMQTTVars(int(mqttPort), mqttHost, mqttUser, mqttPass, mqttClientID, mqttSubTopic, mqttSubQos)
+	mqtt.SetMQTTVars(int(mqttPort), int(mqttSubQos), mqttHost, mqttUser, mqttPass, mqttClientID, mqttSubTopic)
 }
 
 var connLive bool
@@ -147,30 +157,37 @@ func main() {
 
 	tbMetrics := make(chan models.TimeBasedMetrics, 10)
 
-	db.InitDatabase(ctx)
+	// fmt.Println("testing123")
+	// msgChan, err := mqtt.ConnectAndSub(ctx, logrus.NewEntry(log).WithField("stage", "mqtt-init"))
+	// if err != nil {
+	// 	panic(err)
+	// }
 
-	msgChan, err := mqtt.ConnectAndSub(ctx, log)
-	if err != nil {
-		panic(err)
-	}
+	// fmt.Println("testing456")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
+		fmt.Println("starting mqtt")
 		defer wg.Done()
-		mqtt.Sub(ctx, log, msgChan, tbMetrics)
+		logEntry := logrus.NewEntry(log).WithField("stage", "mqtt")
+		// logEntry := logrus.NewEntry(log)
+		err := mqtt.Sub(ctx, logEntry, tbMetrics)
+		if err != nil {
+			log.Error(errors.Wrap(err, "exiting mqtt coroutine"))
+		}
+		log.Info("exiting mqtt")
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := db.InsertDatad(ctx, tbMetrics); err != nil {
-			cancel()
+		r.GET("/status", k8sProbeHandler)
+		err := r.Run(fmt.Sprintf(":%s", serverPort))
+		if err != nil {
+			log.Error(errors.Wrap(err, "exiting server coroutine"))
 		}
 	}()
-
-	r.GET("/status", k8sProbeHandler)
-	r.Run(fmt.Sprintf(":%s", serverPort))
 
 	wg.Wait()
 }
