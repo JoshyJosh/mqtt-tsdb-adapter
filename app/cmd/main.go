@@ -151,7 +151,6 @@ func main() {
 	// @todo add signals
 	r := gin.Default()
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	log := logrus.New()
 
@@ -165,6 +164,8 @@ func main() {
 
 	// fmt.Println("testing456")
 
+	errChan := make(chan error)
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -175,6 +176,7 @@ func main() {
 		err := mqtt.Sub(ctx, logEntry, tbMetrics)
 		if err != nil {
 			log.Error(errors.Wrap(err, "exiting mqtt coroutine"))
+			errChan <- err
 		}
 		log.Info("exiting mqtt")
 	}()
@@ -186,6 +188,18 @@ func main() {
 		err := r.Run(fmt.Sprintf(":%s", serverPort))
 		if err != nil {
 			log.Error(errors.Wrap(err, "exiting server coroutine"))
+			errChan <- err
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-errChan:
+			cancel()
+		case <-ctx.Done():
+			return
 		}
 	}()
 
