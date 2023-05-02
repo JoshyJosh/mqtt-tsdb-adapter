@@ -113,9 +113,10 @@ func Sub(ctx context.Context, log *logrus.Entry, tbMetrics chan models.TimeBased
 
 			log.Info(m.Topic)
 
+			// topic should be structured as db_name/table
 			topicSlice := strings.Split(m.Topic, "/")
-			dbName := topicSlice[1]
-			table := topicSlice[2]
+			dbName := topicSlice[0]
+			table := topicSlice[1]
 
 			var timestamp time.Time
 			var err error
@@ -123,7 +124,6 @@ func Sub(ctx context.Context, log *logrus.Entry, tbMetrics chan models.TimeBased
 			var metrics map[string]float64
 			var tags map[string]string
 			if bytes.Contains(m.Payload, []byte("{")) {
-				// @todo implement timestamp
 				metrics, tags, timestamp, err = parseJSON(m.Payload, log)
 			} else {
 				metrics, tags, timestamp, err = parseCSV(m.Payload, log)
