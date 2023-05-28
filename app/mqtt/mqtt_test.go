@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -70,19 +71,19 @@ func TestParseJSON(t *testing.T) {
 			},
 		},
 		{
-			name:          "Failure: invalid JSON body",
+			name:          "Failure: Invalid JSON body",
 			body:          []byte(`this is not JSON`),
 			expectedError: true,
 		},
 		{
-			name:          "Failure: invalid JSON value",
+			name:          "Failure: Invalid JSON value",
 			body:          []byte(`{"invalid_field":0x88}`),
 			expectedError: true,
 		},
 	}
 
 	var log = logrus.New()
-	var testFailed bool
+	failedTests := []string{}
 
 testCaseLoop:
 	for _, c := range cases {
@@ -92,7 +93,7 @@ testCaseLoop:
 		if err != nil {
 			if !c.expectedError {
 				t.Error(errors.Wrap(err, "unexpected error"))
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 			}
 
 			continue
@@ -100,7 +101,7 @@ testCaseLoop:
 
 		if len(c.expectedMetrics) != len(metrics) {
 			t.Errorf("expected no. of metrics %d, got %d", len(c.expectedMetrics), len(metrics))
-			testFailed = true
+			failedTests = append(failedTests, c.name)
 			continue
 		}
 
@@ -108,20 +109,20 @@ testCaseLoop:
 			expectedVal, ok := c.expectedMetrics[metricKey]
 			if !ok {
 				t.Errorf("unexpected metric: %s", metricKey)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 
 			if expectedVal != metricVal {
 				t.Errorf("unexpected value for key: %s, expected metric: %g, got: %g", metricKey, expectedVal, metricVal)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 		}
 
 		if len(c.expectedTags) != len(tags) {
 			t.Errorf("expected no. of tags %d, got %d", len(c.expectedTags), len(tags))
-			testFailed = true
+			failedTests = append(failedTests, c.name)
 			continue
 		}
 
@@ -129,25 +130,25 @@ testCaseLoop:
 			expectedVal, ok := c.expectedTags[tagKey]
 			if !ok {
 				t.Errorf("unexpected tag: %s", tagKey)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 
 			if expectedVal != tagVal {
 				t.Errorf("unexpected value for key: %s, expected tag: %s, got: %s", tagKey, expectedVal, tagVal)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 		}
 
 		if c.expectedTimestamp != timestamp {
 			t.Fatalf("expected timestamp: %d got: %d", c.expectedTimestamp.Unix(), timestamp.Unix())
-			testFailed = true
+			failedTests = append(failedTests, c.name)
 		}
 	}
 
-	if testFailed {
-		t.Error("failure in test cases")
+	if len(failedTests) > 0 {
+		t.Errorf("failure in test cases: %s", strings.Join(failedTests, ","))
 	}
 }
 
@@ -237,14 +238,28 @@ func TestParseCSV(t *testing.T) {
 			expectedError: true,
 		},
 		{
-			name:          "Failure: invalid CSV body",
+			name:          "Failure: Invalid CSV body",
 			body:          []byte(`this is not CSV`),
+			expectedError: true,
+		},
+		{
+			name: "Failure: Greater value column size",
+			body: []byte(
+				"timestamp;name;tag;temp;preassure;count\n1257894000;test_name;test_tag;12.34;10.23;9;666",
+			),
+			expectedError: true,
+		},
+		{
+			name: "Failure: Lesser value column size",
+			body: []byte(
+				"timestamp;name;tag;temp;preassure;count\n1257894000;test_name;test_tag;12.34;10.23",
+			),
 			expectedError: true,
 		},
 	}
 
 	var log = logrus.New()
-	var testFailed bool
+	failedTests := []string{}
 
 testCaseLoop:
 	for _, c := range cases {
@@ -254,7 +269,7 @@ testCaseLoop:
 		if err != nil {
 			if !c.expectedError {
 				t.Fatal(errors.Wrap(err, "unexpected error"))
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 			}
 
 			continue
@@ -262,7 +277,7 @@ testCaseLoop:
 
 		if len(c.expectedMetrics) != len(metrics) {
 			t.Fatalf("expected no. of metrics %d, got %d", len(c.expectedMetrics), len(metrics))
-			testFailed = true
+			failedTests = append(failedTests, c.name)
 			continue
 		}
 
@@ -270,43 +285,45 @@ testCaseLoop:
 			expectedVal, ok := c.expectedMetrics[metricKey]
 			if !ok {
 				t.Fatalf("unexpected metric: %s", metricKey)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 
 			if expectedVal != metricVal {
 				t.Fatalf("unexpected value for key: %s, expected metric: %g, got: %g", metricKey, expectedVal, metricVal)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 		}
 
 		if len(c.expectedTags) != len(tags) {
 			t.Fatalf("expected no. of tags %d, got %d", len(c.expectedTags), len(tags))
+			failedTests = append(failedTests, c.name)
+			continue
 		}
 
 		for tagKey, tagVal := range tags {
 			expectedVal, ok := c.expectedTags[tagKey]
 			if !ok {
 				t.Fatalf("unexpected tag: %s", tagKey)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 
 			if expectedVal != tagVal {
 				t.Fatalf("unexpected value for key: %s, expected tag: %s, got: %s", tagKey, expectedVal, tagVal)
-				testFailed = true
+				failedTests = append(failedTests, c.name)
 				continue testCaseLoop
 			}
 		}
 
 		if c.expectedTimestamp != timestamp {
 			t.Fatalf("expected timestamp: %d got: %d", c.expectedTimestamp.Unix(), timestamp.Unix())
-			testFailed = true
+			failedTests = append(failedTests, c.name)
 		}
 	}
 
-	if testFailed {
-		t.Error("failure in test cases")
+	if len(failedTests) > 0 {
+		t.Errorf("failure in test cases: %s", strings.Join(failedTests, ","))
 	}
 }

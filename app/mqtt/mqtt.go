@@ -192,6 +192,11 @@ func parseCSV(body []byte, log *logrus.Entry) (map[string]float64, map[string]st
 		// @todo cause error if a space is in a row
 		row := bytes.Split(rows[i], []byte(";"))
 
+		// check if csv value row length does not match the header length
+		if len(row) != len(fieldNames) {
+			return nil, nil, timestamp, fmt.Errorf("row value length does not match header length. Header count: %d Row count: %d", len(fieldNames), len(row))
+		}
+
 		for j := range row {
 			if j == timestampIdx {
 				var err error
