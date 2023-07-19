@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"taos-adapter/db"
 	"taos-adapter/models"
 	"taos-adapter/mqtt"
@@ -158,6 +160,10 @@ func main() {
 
 	var wg sync.WaitGroup
 
+	sigChan := make(chan os.Signal, 1)
+
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -200,6 +206,8 @@ func main() {
 	go func() {
 		defer wg.Done()
 		select {
+		case <-sigChan:
+			cancel()
 		case <-errChan:
 			cancel()
 		case <-ctx.Done():
