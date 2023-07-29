@@ -28,7 +28,7 @@ func SetDBVars(portVar int, hostVar, userVar, passVar, dbNameVar string) {
 /* PingDatabase is used to check if the database is reachable for connections and get current table list */
 func InitDatabase(ctx context.Context) {
 	logrus.Infof("Connecting to %s:%d %s//%s\n", host, int(port), user, pass)
-	conn, err := af.Open(host, user, pass, "", int(port))
+	conn, err := getConn("")
 	if err != nil {
 		fmt.Println("failed to init connect, err:", err)
 	}
@@ -98,6 +98,7 @@ func getConn(dbName string) (*af.Connector, error) {
 		logrus.Println("failed to init connect, err: ", err)
 		return nil, errors.Wrap(err, "failed to connect to tdengine")
 	}
+	logrus.Info("Connected to tdengine")
 
 	return conn, nil
 }
