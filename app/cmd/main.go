@@ -219,12 +219,5 @@ func main() {
 }
 
 func k8sProbeHandler(ctx *gin.Context) {
-	const liveQuery = "live"
-
-	if connLive {
-		ctx.String(http.StatusAccepted, "")
-		return
-	}
-
-	ctx.String(http.StatusNotFound, "")
+	ctx.String(http.StatusOK, "")
 }

@@ -136,7 +136,7 @@ func InsertDatad(ctx context.Context, tbMetrics chan models.TimeBasedMetrics) er
 		logrus.Info(tdenginePayload[0])
 
 		if err := conn.InfluxDBInsertLines(tdenginePayload, "s"); err != nil {
-			logrus.Error(err)
+			logrus.Error(errors.Wrap(err, "failed to insert influxdb lines"))
 		}
 	}
 
