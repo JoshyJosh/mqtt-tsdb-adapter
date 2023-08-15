@@ -109,9 +109,7 @@ func Sub(ctx context.Context, log *logrus.Entry, tbMetrics chan models.TimeBased
 			log.Info("context done")
 			return nil
 		case m := <-msgChan:
-			log.Info("looping in msgChan")
-
-			log.Info(m.Topic)
+			log.Infof("Reading from topic: %s", m.Topic)
 
 			// topic should be structured as db_name/table
 			topicSlice := strings.Split(m.Topic, "/")

@@ -30,7 +30,7 @@ func InitDatabase(ctx context.Context) {
 	logrus.Infof("Connecting to %s:%d %s//%s\n", host, int(port), user, pass)
 	conn, err := getConn("")
 	if err != nil {
-		fmt.Println("failed to init connect, err:", err)
+		logrus.Error("failed to init connect, err: ", err)
 	}
 	defer conn.Close()
 
@@ -103,22 +103,22 @@ func getConn(dbName string) (*af.Connector, error) {
 	return conn, nil
 }
 
-func InsertDatad(ctx context.Context, tbMetrics chan models.TimeBasedMetrics) error {
+func InsertDatad(ctx context.Context, log *logrus.Entry, tbMetrics chan models.TimeBasedMetrics) error {
 	conn, err := getConn("")
 	if err != nil {
-		logrus.Error(errors.Wrap(err, "failed to initial connect to database"))
+		log.Error(errors.Wrap(err, "failed to initial connect to database"))
 		return err
 	}
 	defer conn.Close()
 
 	for tbMetric := range tbMetrics {
-		logrus.Info(tbMetric.DB)
+		log.Info(tbMetric.DB)
 		if _, ok := databaseMap[tbMetric.DB]; !ok {
-			logrus.Infof("creating database %s", tbMetric.DB)
+			log.Infof("creating database %s", tbMetric.DB)
 
 			if _, err := conn.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s;", tbMetric.DB)); err != nil {
 				errMsg := fmt.Sprintf("failed to create database %s", tbMetric.DB)
-				logrus.Error(errMsg)
+				log.Error(errMsg)
 				return errors.Wrapf(err, errMsg)
 			}
 
@@ -126,38 +126,38 @@ func InsertDatad(ctx context.Context, tbMetrics chan models.TimeBasedMetrics) er
 		}
 
 		if _, err := conn.Exec(fmt.Sprintf("USE %s", tbMetric.DB)); err != nil {
-			logrus.Error(err)
+			log.Error(err)
 			continue
 		}
 
-		tagStr, metricStr := compileTDEngineMetricsAndTags(tbMetric)
+		tagSlice, metricSlice := compileTDEngineMetricsAndTags(tbMetric)
 
-		tdenginePayload := []string{fmt.Sprintf("%s,%s %s %d", tbMetric.Table, strings.Join(tagStr, ","), strings.Join(metricStr, ","), tbMetric.Timestamp.Unix())}
-		logrus.Info(tdenginePayload[0])
+		tagStr := ""
+		if len(tagSlice) > 0 {
+			tagStr = fmt.Sprintf(",%s", strings.Join(tagSlice, ","))
+		}
+		tdenginePayload := []string{fmt.Sprintf("%s%s %s %d", tbMetric.Table, tagStr, strings.Join(metricSlice, ","), tbMetric.Timestamp.Unix())}
+		log.Info(tdenginePayload[0])
 
 		if err := conn.InfluxDBInsertLines(tdenginePayload, "s"); err != nil {
-			logrus.Error(errors.Wrap(err, "failed to insert influxdb lines"))
+			log.Error(errors.Wrap(err, "failed to insert influxdb lines"))
 		}
 	}
 
 	return nil
 }
 
-func compileTDEngineMetricsAndTags(tbMetric models.TimeBasedMetrics) (tagStr, metricStr []string) {
+func compileTDEngineMetricsAndTags(tbMetric models.TimeBasedMetrics) (tagSlice, metricSlice []string) {
 	for key, val := range tbMetric.Tags {
-		tagStr = append(tagStr, fmt.Sprintf("%s=%s", key, val))
-	}
-
-	if len(tagStr) == 0 {
-		tagStr = []string{"nullTag=null"}
+		tagSlice = append(tagSlice, fmt.Sprintf("%s=%s", key, val))
 	}
 
 	for key, val := range tbMetric.Metrics {
-		metricStr = append(metricStr, fmt.Sprintf("%s=%g", key, val))
+		metricSlice = append(metricSlice, fmt.Sprintf("%s=%g", key, val))
 	}
 
-	if len(metricStr) == 0 {
-		metricStr = []string{"nullVal=0"}
+	if len(metricSlice) == 0 {
+		metricSlice = []string{"nullVal=0"}
 	}
 
 	return

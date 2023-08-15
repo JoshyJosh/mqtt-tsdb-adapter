@@ -55,7 +55,7 @@ func TestCompileTDEngineMetricsAndTags(t *testing.T) {
 			},
 		},
 		{
-			name: "Success empty tags",
+			name: "Success: empty tags",
 			metrics: models.TimeBasedMetrics{
 				Metrics: map[string]float64{
 					"temp":      22.11,
@@ -68,9 +68,7 @@ func TestCompileTDEngineMetricsAndTags(t *testing.T) {
 				"preassure=14.695": struct{}{},
 				"count=2":          struct{}{},
 			},
-			expectedTags: map[string]struct{}{
-				"nullTag=null": struct{}{},
-			},
+			expectedTags: map[string]struct{}{},
 		},
 	}
 

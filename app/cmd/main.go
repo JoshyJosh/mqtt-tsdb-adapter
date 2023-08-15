@@ -182,7 +182,8 @@ func main() {
 		defer wg.Done()
 		log.Info("starting tdengine")
 		defer log.Info("exiting tdengine")
-		err := db.InsertDatad(ctx, tbMetrics)
+		logEntry := logrus.NewEntry(log).WithField("stage", "db")
+		err := db.InsertDatad(ctx, logEntry, tbMetrics)
 		if err != nil {
 			log.Error(errors.Wrap(err, "exiting tdengine coroutine"))
 			errChan <- err
